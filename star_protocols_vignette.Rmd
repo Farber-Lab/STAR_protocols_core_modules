@@ -1,0 +1,644 @@
+---
+title: Vignette for 'A Computational Approach for Identification of Core Modules from
+  a   Co-expression Network and GWAS Data'
+author: "Olivia Sabik"
+output:
+  html_document:
+    df_print: paged
+---
+
+### Before You Begin ###
+#### Load packages and set working directory location ####
+- commented lines install required packages--uncomment and run if a package is not installed
+```{r dependencies}
+#install.packages("tidyverse")
+library(tidyverse)
+#install.packages("readxl")
+library(readxl)
+#install.packages("knitr")
+library(knitr)
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+library(BiocManager)
+# BiocManager::install("DESeq2")
+library(DESeq2)
+# BiocManager::install("WGCNA")
+library(WGCNA)
+# BiocManager::install("biomaRt")
+library(biomaRt)
+# BiocManager::install("preprocessCore")
+library(preprocessCore)
+# BiocManager::install("GenomicRanges")
+library(GenomicRanges)
+# install.packages("LDlinkR")
+library(LDlinkR)
+# install.packages("coloc")
+library(coloc)
+# install.packages("devtools")
+library(devtools)
+# devtools::install_github("oliviasabik/GTExIdConverter")
+# devtools::install_github("oliviasabik/RACER")
+library(GTExIdConverter)
+library(RACER)
+#BiocManager::install("PhenStat")
+library(PhenStat)
+
+# set the working directory to the location of the downloaded directory
+setwd("~/Desktop/starprotocol_sabik2020/")
+opts_knit$set(root.dir = '~/Desktop/starprotocol_sabik2020/')
+```
+
+#### Identify a GWAS study ####
+```{r read in gwas}
+url = "http://www.gefos.org/sites/default/files/BEurope-Bmd-As-C-Gwas-SumStats.txt_0.gz"
+gwas_sumstat = read_tsv(url)
+```
+
+#### Acquire RNA-seq data in the relevant tissue or cell type for your trait of interest ####
+```{r read in expression matrix}
+# Loading in our expression matrix GxS with G columns, representing genes and S rows, representing samples
+load("./data/expression_matrix/exp_mat.Rdata")
+# formatting exp_mat, removing strain as a column to row names
+rownames(exp_mat) <- exp_mat$strain
+exp_mat <- exp_mat[,-1]
+```
+
+#### Pre-processing RNA-seq data for co-expression network construction ####
+
+##### Normalizing RNA-seq data #####
+```{r eval=FALSE}
+# this chunk is not run because these steps were already applied to the expression matrix we've loaded in
+
+#apply a variance stabilizing transformation to get normalized exp_mat
+varianceStabilizingTransformation(object = exp_mat)
+# or apply a log transformation to get normalized exp_mat
+log2(exp_mat + 1)
+```
+
+##### Removing batch effects via PEER #####
+```{r eval = FALSE}
+# The PEER tool is most readily available as a python module, and thus is not included in this R tutorial
+
+# A detailed wiki for how to use PEER can be found on the PEER Github Page: https://github.com/PMBio/peer/wiki. 
+```
+
+##### Quantile normalization #####
+```{r}
+# Finally, we perform quantile normalization
+norm_exp_mat <- normalize.quantiles(as.matrix(exp_mat))
+colnames(norm_exp_mat) <- colnames(exp_mat)
+rownames(norm_exp_mat) <- rownames(exp_mat)
+norm_exp_mat[1:5,1:5]
+norm_exp_mat <- as.data.frame(norm_exp_mat)
+```
+
+#### Curating Lists of Known Disease and Phenotype Associated Genes ####
+```{r}
+# read in annotated tables of genes
+url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/ae828f98-acd0-40e7-aa41-14dd7fffefc0/mmc6.xlsx"
+download.file(url = url, destfile = "./data/gene_lists/gene_lists.xlsx")
+phen_genes = read_excel("./data/gene_lists/gene_lists.xlsx", sheet = 1)
+monogenic_genes = read_excel("./data/gene_lists/gene_lists.xlsx", sheet = 2)
+
+# convert genes to vector of gene identifiers
+len_phen = length(phen_genes$gene_name)
+phen_genes = phen_genes$gene_name[-c((len_phen-7):len_phen)]
+len_mono = length(monogenic_genes$gene)
+monogenic_genes = monogenic_genes$gene[-c((len_mono-10):len_mono)]
+```
+
+### Main Protocol ###
+#### (1) Construct a co-expression network ####
+##### This section heavily represents the content from the WGCNA tutorials created by the author's of WGCNA, found here: https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/Tutorials/
+```{r}
+## Setting WGCNA options ##
+options(stringsAsFactors = FALSE)
+
+## Quality Control of Expression Data ##
+#Using a cluster tree to find sample outliers
+sampleTree = hclust(dist(norm_exp_mat), method = "average")
+sizeGrWindow(12,9)
+par(cex = 0.6);
+par(mar = c(0,4,2,0))
+plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, 
+     cex.axis = 1.5, cex.main = 2)
+```
+
+```{r}
+## Power Calculation for Network Construction ##
+powers = c(c(1:10), seq(from = 12, to=20, by=2))
+# Call the network topology analysis function
+sft = pickSoftThreshold(norm_exp_mat, powerVector = powers, verbose = 5, networkType = "signed")
+# Plot the results:
+sizeGrWindow(9, 5)
+par(mfrow = c(1,2));
+cex1 = 0.9;
+# Scale-free topology fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
+     main = paste("Scale independence")); text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     labels=powers,cex=cex1,col="red");abline(h=0.9,col="red")
+# this line corresponds to using an R^2 cut-off of h
+# Mean connectivity as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+     xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
+     main = paste("Mean connectivity"));text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+#### power = 8
+#### lowest power to provide a scale-free topology fit of at least 0.9 
+#### Low mean connectivity score
+```
+
+```{r}
+## Calculating the Network ##
+net = blockwiseModules(norm_exp_mat, power = 8,
+                       TOMType = "signed", minModuleSize = 20,
+                       networkType = "signed",
+                       reassignThreshold = 0, mergeCutHeight = 0.15,
+                       numericLabels = TRUE, pamRespectsDendro = FALSE,
+                       saveTOMs = TRUE,
+                       saveTOMFileBase = "./data/network/norm_exp_mat_TOM",
+                       verbose = 3)
+table(net$colors)
+```
+
+```{r}
+## Saving the Network ##
+moduleLabels = net$colors
+moduleColors = labels2colors(net$colors)
+MEs = net$MEs;
+dim(MEs)
+geneTree = net$dendrograms[[1]];
+save(sft, MEs, moduleLabels, moduleColors, geneTree,
+     file = "./network/network.RData")
+```
+
+```{r}
+## Loading the Network ##
+load("./data/network/network.RData")
+```
+
+```{r}
+## Annotating the Network ##
+# the genes in the network will be labeled with some sort of identifier, e.g. Ensembl gene IDs
+# Using the biomaRt package, mappings from those identifiers to gene symbols can be acquired
+# These steps will vary based on the organism you use and the gene identifiers used in the list of phenotype and disease associated genes generated above
+ensembl = useMart("ensembl")
+mm19 = useDataset(mart = ensembl, dataset = "mmusculus_gene_ensembl")
+
+listAttributes(mm19)
+listFilters(mm19)
+
+m = getBM(attributes = c("ensembl_transcript_id", "external_gene_name", "description", "chromosome_name", "start_position", "end_position"),
+          filters = c("ensembl_transcript_id"),
+          values = colnames(norm_exp_mat),
+          mart = mm19)
+
+gene_MEs <- rbind(colnames(norm_exp_mat), moduleColors, moduleLabels)
+gene_MEs <- t(gene_MEs)
+colnames(gene_MEs)[1:3] <- c("ensembl_transcript_id", "mod_color", "mod_number")
+gene_MEs <- as.data.frame(gene_MEs)
+annotated_mods = merge(gene_MEs, m, by = "ensembl_transcript_id")
+
+# now you can filter annotated_mods to see the genes in each co-expression module
+annotated_mods %>%
+  filter(mod_number == 1)
+```
+
+#### (2) Gene Ontology Analysis ####
+```{r}
+# While tools exist for performing gene ontology analysis in R, our tool of preference for this project is ToppFun, of the ToppGene suite: https://toppgene.cchmc.org/enrichment.jsp, which is a web interface tool
+
+# ToppGene is unique in that it not only searches for enriched gene ontology categories and pathways for your genes of interest, but also human and mouse phenotypes, publications and published coexpression data sets, gene families, microRNAs, drugs, and diseases
+
+# You can extract the gene names for a module by writing the module out to a .csv file
+annotated_mods %>%
+  filter(mod_number == 1) %>%
+  write_csv(., "./data/network/mod_1.csv")
+
+# From ToppFun, you can click the "Download All" button from your results page, and get all of the results, so you can save them, browse them in R, and compare different modules in R
+
+url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/60cdba8a-aa04-4c22-8ca4-4f8f0e6173dd/mmc3.xlsx"
+download.file(url = url, destfile = "./data/gene_ontology/toppfun_res.xlsx")
+toppfun_1 = read_excel("./data/gene_ontology/toppfun_res.xlsx", sheet = 1, skip = 1)
+toppfun_1
+
+# ToppFun reports back the significance of each enrichment with an assortment of multiple testing correction methods, the number of hits for that category from your query ("Hit Count in Query List"), and the total number of genes in the category ("Hit Count in Genome")
+```
+
+#### (3) Creating GWAS gene list ####
+```{r}
+# Next, a list of genes implicated by the GWAS in question will be generated
+# In the case of the GWAS we used, fine mapping was performed to identify a subset of significantly associated SNPs that are indepedent associations and lead SNPs, so here, we'll read in the lead SNP file and use it to subset the full summary statistics for the study
+url = "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5621629/bin/NIHMS73769-supplement-Supplementary_Table_2.xlsx"
+download.file(url = url, destfile = "./data/gwas/gwas_bmd_lead_snps.xlsx")
+lead_snps = read_excel("./data/gwas/gwas_bmd_lead_snps.xlsx", sheet = 1, skip = 3)
+bmd_snps <- subset(gwas_sumstat, gwas_sumstat$SNP %in% lead_snps$RSID)
+
+# Some of the variants are not SNPs, but indels. LDLink recognizes them by a different naming convention, so we have to modify their identifiers for LDLink to find their proxies
+bmd_snps = bmd_snps %>%
+  mutate(SNP = word(bmd_snps$SNP,1,sep = "_"))
+
+bmd_snps$SNP[grep(":", bmd_snps$SNP)]
+bmd_snps$SNP[6] = paste0("chr", bmd_snps$SNP[6])
+bmd_snps$SNP[163] = paste0("chr", bmd_snps$SNP[163])
+bmd_snps$SNP[260] = paste0("chr", bmd_snps$SNP[260])
+bmd_snps$SNP[301] = paste0("chr", bmd_snps$SNP[301])
+
+# Next we batch query LDLink to get all of the proxy SNPs
+LDproxy_batch(snp = bmd_snps$SNP, pop = "EUR", r2d = "r2", token = "c0f613f149ab", append = TRUE)
+
+# some SNPs will return an error in the LD search. We will stil annotate the nearest up and downstream genes from these SNPs, but their window will just be their coordinate location
+no_ld_snps = c("rs191147097", "rs149333699", "rs184953495", "rs10668066",
+               "rs143581991", "chr10:29087203", "rs12806687", "rs72186592", "rs202234992")
+
+# we format these so we can combine them with the LD 0.7 regions below
+no_ld_regions = bmd_snps %>%
+  filter(SNP %in% no_ld_snps) %>%
+  dplyr::rename(query_snp = SNP) %>%
+  group_by(query_snp) %>%
+  summarize(min = min(BP), max = max(BP), chr = paste0("chr",max(CHR)))
+
+# We read back in the results of the LDLink proxy query
+proxies = read_tsv("./combined_query_snp_list.txt", skip = 1, col_names = FALSE)
+colnames(proxies) = c("index", "query_snp", "rs_id", "coord", "alleles", "maf", "distance", "d_prime", "r2", "correlated_alleles", "regulome_db", "function")
+
+# now we filter for proxies with R2 greater than 0.7, and for each query_snp we will create an entry in our regions table with the max and min distance from the 
+ld_regions = proxies %>%
+  filter(r2 >= 0.7) %>%
+  separate(col = coord, sep = ":", into = c("chr", "coord")) %>%
+  group_by(query_snp) %>%
+  summarize(chr = max(chr), min = as.numeric(min(coord)), max = as.numeric(max(coord)))
+
+# then we combine both sets to get one set of regions of LD >= 0.7 for each GWAS lead SNP
+ld07_gwas_regions = bind_rows(no_ld_regions, ld_regions) %>%
+  dplyr::select(chr, start = min, end = max, query_snp)
+
+# make sure none of the regions have a negative width
+for(i in 1:nrow(ld07_gwas_regions)){
+  if((ld07_gwas_regions[i,3]-ld07_gwas_regions[i,2]) < 0){
+    print(paste0("swap row #", i))
+    start = ld07_gwas_regions[i,3]
+    end = ld07_gwas_regions[i,2]
+    ld07_gwas_regions[i,3] = end
+    ld07_gwas_regions[i,2] = start
+  }
+}
+```
+
+```{r}
+# Next, we want to find the intersection between these regions and the full human geneset. Our gene set was generated from the hg19 reference genome using the UCSC gene tables
+# It is important to match the coordinates of the genome used in the GWAS study to the gene set
+url = "https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/refGene.txt.gz"
+genes = read_tsv(url, col_names = FALSE)
+colnames(genes) = c("bins", "refseq_id", "chr", "strand", "txStart", "txEnd", "cdsStart", "cdsEnd", "exonCount", "ExonStarts", "ExonEnds", "score", "name", "cdsStartStat", "cdsEndStat", "exonFrames")
+# chr, start, end, refseq_id, name
+genes = genes[,c(3,5,6,2,13)]
+genes = genes %>%
+  filter(str_detect(refseq_id, "NM_"))
+
+# check that the column types are correct
+head(genes)
+head(ld07_gwas_regions)
+
+# check that the chromosome encoding is the same
+sort(unique(genes$chr)) == sort(unique(ld07_gwas_regions$chr))
+
+# Next, we're going to use the Genomic Ranges package to annotate our ranges with genes
+gr_genes <- GRanges(genes)
+gr_gwas <- GRanges(ld07_gwas_regions)
+
+overlaps <- GenomicRanges::findOverlaps(gr_genes, gr_gwas)
+overlaps_info = cbind(ld07_gwas_regions[overlaps@to,], genes[overlaps@from,]$name)
+overlaps_info = overlaps_info[,c(1,4,5)]
+overlaps_info$type = "overlaps"
+overlaps_info = overlaps_info[!duplicated(overlaps_info), ]
+colnames(overlaps_info) = c("chromosome", "gwas_snp", "gene_name", "type")
+
+nearest_precede <- GenomicRanges::precede(gr_gwas, gr_genes)
+precede_info = cbind(ld07_gwas_regions, genes[nearest_precede,])
+precede_info = precede_info[,c(1,4,9)]
+precede_info$type = "precede"
+precede_info = precede_info[!duplicated(precede_info), ]
+colnames(precede_info) = c("chromosome", "gwas_snp", "gene_name", "type")
+precede_info = precede_info[-which(precede_info$morris_snp %in% overlaps_info$gwas_snp),]
+
+nearest_follow <- GenomicRanges::follow(gr_gwas, gr_genes)
+follow_info = cbind(ld07_gwas_regions, genes[nearest_follow,])
+follow_info = follow_info[,c(1,4,9)]
+follow_info$type = "follow"
+follow_info = follow_info[!duplicated(follow_info), ]
+colnames(follow_info) = c("chromosome", "gwas_snp", "gene_name", "type")
+follow_info = follow_info[-which(follow_info$morris_snp %in% overlaps_info$gwas_snp),]
+
+gwas_region_genes = rbind(overlaps_info, precede_info, follow_info)
+gwas_region_genes
+```
+
+```{r}
+# We now have a list of human genes that overlap the regions as defined by LD from our study of interest, however we may also need the equivalent list in mouse
+# We can use a homology map to generate a list of mouse homologs for the human gene list from MGI (http://www.informatics.jax.org/faq/ORTH_dload.shtml)
+url = "http://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt"
+homology <- read_tsv(url)
+homology
+
+gwas_gene_hom <- homology %>%
+  filter(Symbol %in% gwas_region_genes$gene_name)
+
+gwas_mouse_hom <- homology %>%
+ filter(`HomoloGene ID` %in% gwas_gene_hom$`HomoloGene ID`) %>%
+ filter(`NCBI Taxon ID` == 10090)
+
+gwas_mouse_genes = gwas_mouse_hom$Symbol 
+```
+
+#### (4) Module Enrichment ####
+```{r}
+# Fisher's Exact tests for module enrichment for GWAS genes, disease genes, and phenotype associated genes
+colors = unique(moduleColors)
+
+for (i in 1:length(colors)){
+  color = colors[i]
+  print(color)
+  matrix_name = paste("mod_",color,"_gene_exp", sep = "")
+  assign(paste0("mod_",color,"_gene_exp"), subset(gene_MEs, gene_MEs$mod_color == color))
+  assign(paste0("mod_",color,"_gene_exp"), as.data.frame(get(paste0("mod_",color,"_gene_exp"))))
+  assign(paste0("mod_",color,"_gene_ids"), rownames(get(paste0("mod_",color,"_gene_exp"))))
+  assign(paste0("mod_",color,"_trx_info"), annotated_mods %>% filter(mod_color == color))
+  d = as.data.frame(get(paste0("mod_",color,"_trx_info")))
+  x = unique(d$external_gene_name) %in% gwas_mouse_genes
+  x = sum(x == TRUE)
+  print(dim(d))
+  print(x)
+  a <- x
+  b <- (417 - a)
+  c <- (dim(d)[1] - a)
+  e <- (29255 - c - b - a)
+  assign(paste0("ft_mod_",color), fisher.test(matrix(c(a,b,c,e),2,2,byrow=TRUE), 
+                      alternative='greater'))
+}
+
+gwas_enrichment_results = as.data.frame(matrix(nrow=59,ncol=3))
+colnames(gwas_enrichment_results) <- c('module_color','p_value','odds_ratio')
+for (i in 1:length(colors)){
+  color = colors[i]
+  ft = get(paste0("ft_mod_",color))
+  gwas_enrichment_results[i,1] = color
+  gwas_enrichment_results[i,2] = ft$p.value
+  gwas_enrichment_results[i,3] = ft$estimate
+}
+
+gwas_enrichment_results %>%
+  arrange(p_value)
+gwas_enrichment_results$p.adj = p.adjust(gwas_enrichment_results$p_value, method = "fdr", n = length(gwas_enrichment_results$p_value))
+gwas_enrichment_results %>% arrange(p.adj)
+```
+
+```{r}
+# The annotate module can be retrieved so the genes in the enriched modules can be browsed. The gene ontology enrichment for these top modules can also be retrieved and browsed
+annotated_mods %>%
+  filter(mod_color == "tan")
+```
+
+```{r}
+# In addition to identifying modules enriched for GWAS genes, modules enriched for genes known to cause related monogenic diseases can be identified
+
+# First, the human monogenic gene IDs are converted to mouse IDs
+monogenic_genes
+mono_gene_hom <- homology %>%
+  filter(Symbol %in% monogenic_genes)
+mono_mouse_hom <- homology %>%
+ filter(`HomoloGene ID` %in% mono_gene_hom$`HomoloGene ID`) %>%
+ filter(`NCBI Taxon ID` == 10090)
+mono_mouse_genes = mono_mouse_hom$Symbol 
+
+# Then the loop is run to identify enriched modules
+for (i in 1:length(colors)){
+  color = colors[i]
+  print(color)
+  d = as.data.frame(get(paste0("mod_",color,"_trx_info")))
+  x = unique(d$external_gene_name) %in% mono_mouse_genes
+  x = sum(x == TRUE)
+  print(dim(d))
+  print(x)
+  a <- x
+  b <- (40 - a)
+  c <- (dim(d)[1] - a)
+  e <- (29255 - a - b -c)
+  assign(paste0("ft_mod_",color), fisher.test(matrix(c(a,b,c,e),2,2,byrow=TRUE), 
+                      alternative='greater'))
+}
+
+mono_results = as.data.frame(matrix(nrow=74,ncol=3))
+colnames(mono_results) <- c('module_color','p_value','odds_ratio')
+for (i in 1:length(colors)){
+  color = colors[i]
+  enrichment = get(paste0("ft_mod_",color))
+  mono_results[i,1] = color
+  mono_results[i,2] = enrichment$p.value
+  mono_results[i,3] = enrichment$estimate
+}
+
+mono_results
+mono_results = arrange(mono_results, desc(odds_ratio))
+mono_results$p.adj = p.adjust(mono_results$p_value, method = "fdr", n = length(mono_results$p_value))
+filter(mono_results, mono_results$p.adj < 0.05)
+```
+
+```{r}
+# In addition to identifying modules enriched for GWAS genes and monogenic disorder genes, modules enriched for genes known to cause related phenotypes in model organisms
+
+# Then the loop is run to identify enriched modules
+for (i in 1:length(colors)){
+  color = colors[i]
+  print(color)
+  d = as.data.frame(get(paste0("mod_",color,"_trx_info")))
+  x = unique(d$external_gene_name) %in% phen_genes
+  x = sum(x == TRUE)
+  print(dim(d))
+  print(x)
+  a <- x
+  b <- (1088 - a)
+  c <- (dim(d)[1] - a)
+  e <- (29255 - a - b -c)
+  assign(paste0("ft_mod_",color), fisher.test(matrix(c(a,b,c,e),2,2,byrow=TRUE), 
+                      alternative='greater'))
+}
+
+phen_results = as.data.frame(matrix(nrow=74,ncol=3))
+colnames(phen_results) <- c('module_color','p_value','odds_ratio')
+for (i in 1:length(colors)){
+  color = colors[i]
+  enrichment = get(paste0("ft_mod_",color))
+  phen_results[i,1] = color
+  phen_results[i,2] = enrichment$p.value
+  phen_results[i,3] = enrichment$estimate
+}
+
+phen_results
+phen_results = arrange(phen_results, desc(odds_ratio))
+phen_results$p.adj = p.adjust(phen_results$p_value, method = "fdr", n = length(phen_results$p_value))
+filter(phen_results, phen_results$p.adj < 0.05)
+```
+
+#### (5) LD Score Regression ####
+```{r}
+# LD score regression (ldsc package) is used to calculated the partitioned heritability attributed to SNPs surrounding the genes that compose each module
+
+# The github repo and the wiki for the ldsc package has detailed tutorials for how to carry out this analysis. It is not wrapped for R, but can be run on the command line using python. The general steps taken are outlined here:
+# (1) First, we need to format the GWAS summary statistics for input into the lsdc algorithm
+
+## munge sumstats, returns a file called out.sumstats.gz
+# ./munge_sumstats.py \
+# --out BMD \
+# --merge-alleles w_hm3.snplist \
+# --a1-inc  \
+# --sumstats bmd_gwas_sumstats.txt
+
+# (2) Generate genesets for each module for all chromosomes; this requires a list of gene identifiers for the genes in each module, a file indicated the coordinates for each identifier, and the plink .bim files of pre-computed LD scores. In this application we use the 1000 genomes plink files, the Genesets are listed as Ensembl gene IDs, and the gene coordinate file "ENSG_coord.txt", provided with the ldsc package, and we use a windowsize of 100,000, as recommended by the authors of the application
+
+## make annotations for each module and each chromosome
+# python ../../src/ldsc/make_annot.py --gene-set-file violet_module_human_gene_ids.Geneset --gene-coord-file ENSG_coord.txt --windowsize 100000 --bimfile ./1000G_plinkfiles/1000G.mac5eur.1.bim --annot-file ./violet_annot/violet_module.1.annot.gz
+
+# (3) Finally, using all of these annotations, run ldsc using the processed summary statistics, the base annotation paths for the modules' annotations, the SNP weights and frequencies for the European 1000 Genomes data that are provided with the ldsc package, the overlap annotations was used because transcripts were used to generate the co-expression network, so the gene sets are non-disjoint, and finally, a base name for the output is provided.
+
+## compute LDSC, outputs out.log and out.results 
+# python ldsc.py 
+# 	--h2 BMD.sumstats.gz\
+# 	--ref-ld-chr antiquewhite4_module.,
+#     bisque4_module.,black_module.,
+#     blue_module., ...etc.\ 
+# 	--w-ld-chr ./weights_hm3_no_hla/weights.
+# 	--overlap-annot\
+# 	--frqfile-chr 1000G.mac5eur.\
+# 	--out BMD_all_modules_compare
+
+### The output of the last step includes a log, which echos the command used to run the regression and provides a summary of the results, and a results table, which reports the proportion of SNPs, the proportion of heritability, the standard error fo the proportion of heritability, the heritability, the standard error of the heritability, and a p-value indicating the statistical significance of the enrichment
+
+#ldsc_log = read_lines("./data/ld_score_regression/BMD_all_modules_compare.log")
+#ldsc_results = read_tsv("./data/ld_score_regression/BMD_all_modules_compare.results")
+
+# The results table has a category for each annotation provided, but they have generic labels. The log keeps track of the annotation input, so we can get the names from the log, because the order of the annotation matters
+
+# Here is an example of table of results from an ldsc run arranged by p-value
+url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/921fc33d-d674-4488-951f-295320b24cea/mmc5.xlsx"
+download.file(url = url, destfile = "./data/ld_score_regression/ld_score_reg_res.xlsx")
+ldsc_res = as.data.frame(read_excel("./data/ld_score_regression/ld_score_reg_res.xlsx", sheet = 3))
+
+# A p-value adjustment is also applied to correct for testing across all modules
+ldsc_res$padj = p.adjust(ldsc_res$Enrichment_p, method = "fdr", n = length(ldsc_res$Enrichment_p))
+ldsc_res %>%
+  dplyr::select(module, Enrichment, padj) %>%
+  filter(padj < 0.05)
+```
+
+#### (6) Colocalization Analysis ####
+```{r}
+# In this section, the coloc package is used to perform genetic colocalization analysis to determine whether eQTL for genes of interest from the core module identified above share common causal variants with QTL for the trait of interest. 
+
+# For this purpose, the GWAS summary statistics we loaded above are sufficient, however, we must reformat the gwas data for input into coloc
+gwas_coloc = gwas_sumstat[c(2,5,6,11,9,7)]
+gwas_coloc$MAF = ifelse(gwas_coloc$A1FREQ > 0.5, (1- gwas_coloc$A1FREQ), (gwas_coloc$A1FREQ))
+
+# In addition to the summary statistics for the GWAS, the eQTL for the genes of interest will also need to be read in. These have been filtered from the full set of associations in the GTEx v7 eQTL studies using awk in the command line, e.g. > awk -F "\t" '$1 ~ /ENSG###/ {print}' .txt | awk -F "\t" '{ if(($3 >= lower_coord_limit) && ($3 <= upper_coord_limit)) { print } }' > output_file.txt. Do this for each tissue in GTEx. The tarball you need to download from GTEx is very large, so you will likely want to execute this on a server. The file can be downloaded with this command >wget https://storage.googleapis.com/gtex_analysis_v7/single_tissue_eqtl_data/GTEx_Analysis_v7_eQTL_all_associations.tar.gz
+gene_files = list.files("./data/eqtl_data/b4galnt3_snps/")
+
+# We will also need to know about the number of samples used in the eQTL analysis for each tissue, so the key with this data need to be read in
+tis = read_tsv("./data/eqtl_data/tissue_key.txt")
+
+# with these files in hand we can loop over all of the tissues and test colocalization in each tissue
+gene_coloc_results = data.frame(matrix(NA, nrow = length(tis$Tissue), ncol = 8)) #empty table to fill with results for each tissue
+for (i in 1:length(gene_files)){
+  print(i)
+  x = gene_files[i] 
+  y = nchar(gene_files[i]) - 23 # the 23 is so that the text at the end of the file name is cut off and just the 
+                                # tissue is left. You many need to change it to match whatever you named your files
+                                # mine looked like "Adipose_Subcutaneous_b4galnt3_ebmd_snps.txt"
+  tissue = str_sub(x, 1, y)     # This will cut the extra characters so just the tissue is left
+  z = read_tsv(paste0("./data/eqtl_data/b4galnt3_snps/",x), col_names = FALSE) # this will read in the eqtl file
+  # formatting
+  cols <- c("X2", "X3", "X4", "X5", "X6")
+  z$variant_id <- do.call(paste, c(z[cols], sep="_"))
+  z = z[,c(1,14,7,8,9,10,11,12,13)]
+  colnames(z) = c("gene_id", "variant_id", "tss_distance", "ma_samples", "ma_count", "maf",
+                     "pval_nominal", "slope", "slope_se")
+  # add in RS_IDs 
+  gene_snp_ids = GTExIdConvert(z$variant_id)
+  z = merge(z, gene_snp_ids, by = "variant_id")
+  tissue_n = as.numeric(tis[which(tis$Tissue == tissue),2])
+  print(dim(z))
+  print(tissue_n)
+  # make coloc objects
+  gene.coloc = list(pvalues=as.numeric(z$pval_nominal),N=as.numeric(tissue_n),type='quant',
+                    snp=as.character(z$rs_id), MAF=as.numeric(z$maf))
+  gwas.coloc = list(pvalues=as.numeric(gwas_coloc$P),N=142487,type='quant',
+                    snp=as.character(gwas_coloc$SNP), MAF=as.numeric(gwas_coloc$MAF))
+  
+  # run coloc
+  coloc_x = coloc.abf(gene.coloc,gwas.coloc)
+  # write out coloc results
+  gene_coloc_results[i,] = c(tissue,z$gene_id[1],coloc_x$summary[1],coloc_x$summary[2],coloc_x$summary[3],
+                                 coloc_x$summary[4],coloc_x$summary[5],coloc_x$summary[6])
+}
+
+#### Looking at the coloc output ####
+# take a look at the results, format them, and then look at the significant ones
+gene_coloc_results 
+colnames(gene_coloc_results) = c("tissue", "gene", "nsnps", "PP.H0.abf", "PP.H1.abf", "PP.H2.abf", "PP.H3.abf", "PP.H4.abf")
+subset(gene_coloc_results, PP.H4.abf > 0.50)
+```
+
+#### (7) PhenStat Analysis ####
+## While the colocalization analysis provides evidence supporting a relationship between network identified genes and a trait of interest, a causal relationship can only be demonstrated through controlled perturbation of a target and direct measurement of the phenotype of interest
+
+## While the hypotheses here can lead to a novel set of experiments, databases of experimental perturbations and measured phenotypes can be mined for evidence supporting a causal relationship between a gene and a phenotype of interest
+# For example, the International Mouse Phenotyping Consortium has a database of phenotypes measured in 7022 strains of knockout mice (IMPC release 12.0). 
+
+# search for gene on main page https://www.mousephenotype.org/
+# go to gene page https://www.mousephenotype.org/data/genes/MGI:3041155
+# click all data table, search for relevant phenotype
+# click into a relevant phenotype https://www.mousephenotype.org/data/charts?accession=MGI:3041155&allele_accession_id=MGI:4434237&pipeline_stable_id=ESLIM_001&procedure_stable_id=ESLIM_005_001&parameter_stable_id=ESLIM_005_001_004&zygosity=homozygote&phenotyping_center=ICS
+# Right click and copy the link to download the “PhenStat-ready raw experiment data”
+# Copy the url into the url defition in the code chunk below
+```{r}
+# Next, download the file
+url = 'https://www.mousephenotype.org/data/exportraw?phenotyping_center=ICS&parameter_stable_id=ESLIM_005_001_004&allele_accession_id=MGI:4434237&strain=MGI:2164831&pipeline_stable_id=ESLIM_001&&zygosity=homozygote&'
+dataset1 = data.table::fread(url)
+# Change the date format, strip only the columns we need to do the statistical comparison
+dataset1 = as.data.frame(dataset1)
+dataset1 = dataset1[,c(15,16,21,26,28)]
+dataset1
+```
+
+## Next, we create a test object for PhenStat that will go into the statistical test
+```{r}
+test<-PhenList(dataset1,
+  testGenotype="EPD0140_5_G02",
+  dataset.colname.batch = "Assay.Date",
+  dataset.values.male="male",
+  dataset.values.female="female",
+  dataset.clean=TRUE, 
+  outputMessages = TRUE)
+test@datasetPL
+PhenStat:::getStat(test)
+```
+
+## Next, use testDataset to test for differences in a dependant variable, here "Value", which is the BMD measurement. The program will choose whether to keep specific model effect, and in this case it corrects for batch, weight, and sex, but not an interaction term. Additionally, it does not detect a difference variances.
+```{r}
+results_MM_bmd = testDataset(test, 
+            depVariable = "Value")
+```
+
+## Use summary output to view the results of the statistical test for comparing BMD. You can see that there is an effect of genotype, there is no sexual dimorphism, and the effect of weight in the model was significant. 
+```{r}
+summaryOutput(results_MM_bmd)
+```
+
+## Finally, we can create a boxplot of the differences in the value between genotypes for both sexes. 
+```{r}
+boxplotSexGenotype(test,
+                   depVariable = "Value",
+                   graphingName = "Bone Mineral Density",
+                   outputMessages = T)
+
+PhenStat:::boxplotSexGenotypeBatchAdjusted(test, depVariable = "Value")
+```
