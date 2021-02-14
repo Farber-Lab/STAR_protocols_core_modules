@@ -1,0 +1,54 @@
+Tissue	Number of RNASeq and Genotyped samples
+Adipose_Subcutaneous	491
+Adipose_Visceral_Omentum	414
+Adrenal_Gland	399
+Artery_Aorta	385
+Artery_Coronary	388
+Artery_Tibial	383
+Brain_Amygdala	361
+Brain_Anterior_cingulate_cortex_BA24	369
+Brain_Caudate_basal_ganglia	358
+Brain_Cerebellar_Hemisphere	335
+Brain_Cerebellum	335
+Brain_Cortex	313
+Brain_Frontal_Cortex_BA9	300
+Brain_Hippocampus	272
+Brain_Hypothalamus	267
+Brain_Nucleus_accumbens_basal_ganglia	264
+Brain_Putamen_basal_ganglia	251
+Brain_Spinal_cord_cervical_c-1	246
+Brain_Substantia_nigra	237
+Breast_Mammary_Tissue	225
+Cells_EBV-transformed_lymphocytes	220
+Cells_Transformed_fibroblasts	213
+Colon_Sigmoid	203
+Colon_Transverse	175
+Esophagus_Gastroesophageal_Junction	157
+Esophagus_Mucosa	153
+Esophagus_Muscularis	154
+Heart_Atrial_Appendage	152
+Heart_Left_Ventricle	146
+Liver	144
+Lung	136
+Minor_Salivary_Gland	132
+Muscle_Skeletal	130
+Nerve_Tibial	122
+Ovary	125
+Pancreas	122
+Pituitary	117
+Prostate	118
+Skin_Not_Sun_Exposed_Suprapubic	111
+Skin_Sun_Exposed_Lower_leg	111
+Small_Intestine_Terminal_Ileum	109
+Spleen	108
+Stomach	106
+Testis	101
+Thyroid	88
+Uterus	85
+Vagina	83
+Whole_Blood	80
+Kidney - Cortex	39
+Bladder	10
+Fallopian Tube	7
+Cervix - Ectocervix	6
+Cervix - Endocervix	5
