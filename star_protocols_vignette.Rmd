@@ -392,7 +392,17 @@ for (i in 1:length(colors)){
 gwas_enrichment_results %>%
   arrange(p_value)
 gwas_enrichment_results$p.adj = p.adjust(gwas_enrichment_results$p_value, method = "fdr", n = length(gwas_enrichment_results$p_value))
+gwas_enrichment_results$neg_log10 = -log10(gwas_enrichment_results$p.adj)
 gwas_enrichment_results %>% arrange(p.adj)
+```
+
+```{r erichment plot for gwas genes}
+gwas_enrichment_results %>%
+  ggplot(aes(x = odds_ratio, y = neg_log10)) +
+  geom_point(aes(color = module_color), size = 3) + 
+  geom_point(color = "black", size = 3, pch = 21) + theme_bw() +
+  geom_hline(yintercept = -log10(0.05), color = "red") +
+  scale_colour_identity()
 ```
 
 ```{r}
@@ -430,7 +440,7 @@ for (i in 1:length(colors)){
                       alternative='greater'))
 }
 
-mono_results = as.data.frame(matrix(nrow=74,ncol=3))
+mono_results = as.data.frame(matrix(nrow=59,ncol=3))
 colnames(mono_results) <- c('module_color','p_value','odds_ratio')
 for (i in 1:length(colors)){
   color = colors[i]
@@ -443,7 +453,17 @@ for (i in 1:length(colors)){
 mono_results
 mono_results = arrange(mono_results, desc(odds_ratio))
 mono_results$p.adj = p.adjust(mono_results$p_value, method = "fdr", n = length(mono_results$p_value))
+mono_results$neg_log10 = -log10(mono_results$p.adj)
 filter(mono_results, mono_results$p.adj < 0.05)
+```
+
+```{r erichment plot for monogenic disease genes}
+mono_results %>%
+  ggplot(aes(x = odds_ratio, y = neg_log10)) +
+  geom_point(aes(color = module_color), size = 3) + 
+  geom_point(color = "black", size = 3, pch = 21) + theme_bw() +
+  geom_hline(yintercept = -log10(0.05), color = "red") +
+  scale_colour_identity()
 ```
 
 ```{r}
@@ -466,7 +486,7 @@ for (i in 1:length(colors)){
                       alternative='greater'))
 }
 
-phen_results = as.data.frame(matrix(nrow=74,ncol=3))
+phen_results = as.data.frame(matrix(nrow=59,ncol=3))
 colnames(phen_results) <- c('module_color','p_value','odds_ratio')
 for (i in 1:length(colors)){
   color = colors[i]
@@ -479,7 +499,17 @@ for (i in 1:length(colors)){
 phen_results
 phen_results = arrange(phen_results, desc(odds_ratio))
 phen_results$p.adj = p.adjust(phen_results$p_value, method = "fdr", n = length(phen_results$p_value))
+phen_results$neg_log10 = -log10(phen_results$p.adj)
 filter(phen_results, phen_results$p.adj < 0.05)
+```
+
+```{r erichment plot for known bone phenotype genes}
+phen_results %>%
+  ggplot(aes(x = odds_ratio, y = neg_log10)) +
+  geom_point(aes(color = module_color), size = 3) + 
+  geom_point(color = "black", size = 3, pch = 21) + theme_bw() +
+  geom_hline(yintercept = -log10(0.05), color = "red") +
+  scale_colour_identity()
 ```
 
 #### (5) LD Score Regression ####
