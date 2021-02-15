@@ -2,7 +2,6 @@ Tissue	Number of RNASeq and Genotyped samples
 Adipose_Subcutaneous	491
 Adipose_Visceral_Omentum	414
 Adrenal_Gland	399
-Artery_Aorta	385
 Artery_Coronary	388
 Artery_Tibial	383
 Brain_Amygdala	361
@@ -47,8 +46,3 @@ Thyroid	88
 Uterus	85
 Vagina	83
 Whole_Blood	80
-Kidney - Cortex	39
-Bladder	10
-Fallopian Tube	7
-Cervix - Ectocervix	6
-Cervix - Endocervix	5
