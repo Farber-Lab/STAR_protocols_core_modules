@@ -9,6 +9,5 @@ This vignette accompanies a publication describing the process of identifying mo
 Paper is not yet published, but will be linked here when it is.
 
 ## To dos
- - Replace links from my github to expression matrix/genes files/tissue file to lab github links
  - Test code, me and Cheryl
 

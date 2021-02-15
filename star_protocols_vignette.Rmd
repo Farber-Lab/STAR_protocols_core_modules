@@ -59,7 +59,7 @@ gwas_sumstat = read_tsv(url)
 #### Acquire RNA-seq data in the relevant tissue or cell type for your trait of interest ####
 ```{r read in expression matrix}
 # Loading in our expression matrix GxS with G columns, representing genes and S rows, representing samples
-load(url("https://github.com/oliviasabik/STAR_protocols_core_modules/raw/main/data/expression_matrix/exp_mat.Rdata"))
+load(url("https://github.com/Farber-Lab/STAR_protocols_core_modules/raw/main/data/expression_matrix/exp_mat.Rdata"))
 # formatting exp_mat, removing strain as a column to row names
 rownames(exp_mat) <- exp_mat$strain
 exp_mat <- exp_mat[,-1]
@@ -574,14 +574,14 @@ gwas_coloc$MAF = ifelse(gwas_coloc$A1FREQ > 0.5, (1- gwas_coloc$A1FREQ), (gwas_c
 # In addition to the summary statistics for the GWAS, the eQTL for the genes of interest will also need to be read in. These have been filtered from the full set of associations in the GTEx v7 eQTL studies using awk in the command line, e.g. > awk -F "\t" '$1 ~ /ENSG###/ {print}' .txt | awk -F "\t" '{ if(($3 >= lower_coord_limit) && ($3 <= upper_coord_limit)) { print } }' > output_file.txt. Do this for each tissue in GTEx. The tarball you need to download from GTEx is very large, so you will likely want to execute this on a server. The file can be downloaded with this command >wget https://storage.googleapis.com/gtex_analysis_v7/single_tissue_eqtl_data/GTEx_Analysis_v7_eQTL_all_associations.tar.gz
 
 # We will also need to know about the number of samples used in the eQTL analysis for each tissue, so the key with this data need to be read in
-tis = read_tsv("https://github.com/oliviasabik/STAR_protocols_core_modules/raw/main/data/eqtl_data/tissue_key.txt")
+tis = read_tsv("https://github.com/Farber-Lab/STAR_protocols_core_modules/raw/main/data/eqtl_data/tissue_key.txt")
 
 # with these files in hand we can loop over all of the tissues and test colocalization in each tissue
 gene_coloc_results = data.frame(matrix(NA, nrow = length(tis$Tissue), ncol = 8)) #empty table to fill with results for each tissue
 for (i in 1:length(tis$Tissue)){
   print(i)
   tissue = as.character(tis$Tissue[i])
-  z = read_tsv(url(paste0("https://github.com/oliviasabik/STAR_protocols_core_modules/raw/main/data/eqtl_data/b4galnt3_snps/", tissue, "_b4galnt3_ebmd_snps.txt")), col_names = FALSE) # this will read in the eqtl file
+  z = read_tsv(url(paste0("https://github.com/Farber-Lab/STAR_protocols_core_modules/raw/main/data/eqtl_data/b4galnt3_snps/", tissue, "_b4galnt3_ebmd_snps.txt")), col_names = FALSE) # this will read in the eqtl file
   # formatting
   cols <- c("X2", "X3", "X4", "X5", "X6")
   z$variant_id <- do.call(paste, c(z[cols], sep="_"))
