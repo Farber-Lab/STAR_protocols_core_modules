@@ -614,6 +614,23 @@ colnames(gene_coloc_results) = c("tissue", "gene", "nsnps", "PP.H0.abf", "PP.H1.
 subset(gene_coloc_results, PP.H4.abf > 0.50)
 ```
 
+```{r}
+eqtl_b4galnt3 = separate(z, variant_id, into = c("chr", "pos", "ref", "alt", "build"), sep = "_")
+gwas_b4galnt3 = gwas_sumstat %>%
+  filter(CHR == as.numeric(eqtl_b4galnt3$chr[1])) %>%
+  filter(BP > min(eqtl_b4galnt3$pos)) %>%
+  filter(BP < max(eqtl_b4galnt3$pos))
+
+gwas_b4galnt3_formatted = formatRACER(assoc_data = gwas_b4galnt3, chr_col = "CHR", pos_col = "BP", p_col = "P", rs_col = "SNP")
+eqtl_b4galnt3_formatter = formatRACER(assoc_data = eqtl_b4galnt3, chr_col = "chr", pos_col = "pos", p_col = "pval_nominal", rs_col = "rs_id")
+
+gwas_b4galnt3_ld = ldRACER(assoc_data = gwas_b4galnt3_formatted, rs_col = "RS_ID", pops = "EUR", lead_snp = "rs215226")
+eqtl_b4galnt3_ld = ldRACER(assoc_data = eqtl_b4galnt3_formatter, rs_col = "RS_ID", pops = "EUR", lead_snp = "rs215226")
+
+mirrorPlotRACER(assoc_data1 = eqtl_b4galnt3_ld, assoc_data2 = gwas_b4galnt3_ld, chr = chr, name1 = "B4GALNT3 eQTL", name2 = "BMD GWAS", plotby = "gene", gene_plot = "B4GALNT3", label_lead = TRUE)
+```
+
+
 #### (7) PhenStat Analysis ####
 ## While the colocalization analysis provides evidence supporting a relationship between network identified genes and a trait of interest, a causal relationship can only be demonstrated through controlled perturbation of a target and direct measurement of the phenotype of interest
 
