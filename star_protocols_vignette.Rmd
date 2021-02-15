@@ -10,7 +10,7 @@ output:
 ### Before You Begin ###
 #### Load packages and set working directory location ####
 - commented lines install required packages--uncomment and run if a package is not installed
-```{r dependencies}
+```{r dependencies, echo = T, results = 'hide'}
 #install.packages("tidyverse")
 library(tidyverse)
 #install.packages("readxl")
@@ -32,6 +32,8 @@ library(preprocessCore)
 library(GenomicRanges)
 # install.packages("LDlinkR")
 library(LDlinkR)
+# install.packages("httr")
+library(httr)
 # install.packages("coloc")
 library(coloc)
 # install.packages("devtools")
@@ -49,7 +51,7 @@ opts_knit$set(root.dir = '~/Desktop/starprotocol_sabik2020/')
 ```
 
 #### Identify a GWAS study ####
-```{r read in gwas}
+```{r read in gwas, echo = T, results = 'hide'}
 url = "http://www.gefos.org/sites/default/files/BEurope-Bmd-As-C-Gwas-SumStats.txt_0.gz"
 gwas_sumstat = read_tsv(url)
 ```
@@ -57,7 +59,7 @@ gwas_sumstat = read_tsv(url)
 #### Acquire RNA-seq data in the relevant tissue or cell type for your trait of interest ####
 ```{r read in expression matrix}
 # Loading in our expression matrix GxS with G columns, representing genes and S rows, representing samples
-load("./data/expression_matrix/exp_mat.Rdata")
+load(url("https://github.com/oliviasabik/STAR_protocols_core_modules/raw/main/data/expression_matrix/exp_mat.Rdata"))
 # formatting exp_mat, removing strain as a column to row names
 rownames(exp_mat) <- exp_mat$strain
 exp_mat <- exp_mat[,-1]
@@ -169,7 +171,7 @@ MEs = net$MEs;
 dim(MEs)
 geneTree = net$dendrograms[[1]];
 save(sft, MEs, moduleLabels, moduleColors, geneTree,
-     file = "./network/network.RData")
+     file = "./data/network/network.RData")
 ```
 
 ```{r}
@@ -540,21 +542,16 @@ gwas_coloc = gwas_sumstat[c(2,5,6,11,9,7)]
 gwas_coloc$MAF = ifelse(gwas_coloc$A1FREQ > 0.5, (1- gwas_coloc$A1FREQ), (gwas_coloc$A1FREQ))
 
 # In addition to the summary statistics for the GWAS, the eQTL for the genes of interest will also need to be read in. These have been filtered from the full set of associations in the GTEx v7 eQTL studies using awk in the command line, e.g. > awk -F "\t" '$1 ~ /ENSG###/ {print}' .txt | awk -F "\t" '{ if(($3 >= lower_coord_limit) && ($3 <= upper_coord_limit)) { print } }' > output_file.txt. Do this for each tissue in GTEx. The tarball you need to download from GTEx is very large, so you will likely want to execute this on a server. The file can be downloaded with this command >wget https://storage.googleapis.com/gtex_analysis_v7/single_tissue_eqtl_data/GTEx_Analysis_v7_eQTL_all_associations.tar.gz
-gene_files = list.files("./data/eqtl_data/b4galnt3_snps/")
 
 # We will also need to know about the number of samples used in the eQTL analysis for each tissue, so the key with this data need to be read in
-tis = read_tsv("./data/eqtl_data/tissue_key.txt")
+tis = read_tsv("https://github.com/oliviasabik/STAR_protocols_core_modules/raw/main/data/eqtl_data/tissue_key.txt")
 
 # with these files in hand we can loop over all of the tissues and test colocalization in each tissue
 gene_coloc_results = data.frame(matrix(NA, nrow = length(tis$Tissue), ncol = 8)) #empty table to fill with results for each tissue
-for (i in 1:length(gene_files)){
+for (i in 1:length(tis$Tissue)){
   print(i)
-  x = gene_files[i] 
-  y = nchar(gene_files[i]) - 23 # the 23 is so that the text at the end of the file name is cut off and just the 
-                                # tissue is left. You many need to change it to match whatever you named your files
-                                # mine looked like "Adipose_Subcutaneous_b4galnt3_ebmd_snps.txt"
-  tissue = str_sub(x, 1, y)     # This will cut the extra characters so just the tissue is left
-  z = read_tsv(paste0("./data/eqtl_data/b4galnt3_snps/",x), col_names = FALSE) # this will read in the eqtl file
+  tissue = as.character(tis$Tissue[i])
+  z = read_tsv(url(paste0("https://github.com/oliviasabik/STAR_protocols_core_modules/raw/main/data/eqtl_data/b4galnt3_snps/", tissue, "_b4galnt3_ebmd_snps.txt")), col_names = FALSE) # this will read in the eqtl file
   # formatting
   cols <- c("X2", "X3", "X4", "X5", "X6")
   z$variant_id <- do.call(paste, c(z[cols], sep="_"))
