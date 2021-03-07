@@ -8,6 +8,13 @@ This vignette accompanies a publication describing the process of identifying mo
 ## Link to paper
 Paper is not yet published, but will be linked here when it is.
 
+## How to use this repo
+
+### Option 1: Download the .html file and open it in your browser
+This option does not require running any of the code to see the code and the output.
+
+### Option 2: Download the .Rmd file and run the code in RStudio
+This option takes more time, and the dependent packages and data must be downloaded, however you can interact with the data using this option.  
+
 ## To dos
- - Test code, me and Cheryl
- - Update .html when LDLink server is back up and we can run all chunks
+ - Share code with Cheryl
