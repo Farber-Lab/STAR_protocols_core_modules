@@ -397,6 +397,7 @@ pub_gwas_genes = pub_gwas_genes %>%
 
 # create list of all modules
 colors = unique(moduleColors)
+colors = colors[colors != "grey"]  
 
 # create object for each module and compute enrichment of overlap between module and GWAS gene list
 for (i in 1:length(colors)){
@@ -418,7 +419,7 @@ for (i in 1:length(colors)){
 }
 
 # format results in table
-gwas_enrichment_results = as.data.frame(matrix(nrow=59,ncol=3))
+gwas_enrichment_results = as.data.frame(matrix(nrow=65,ncol=3))
 colnames(gwas_enrichment_results) <- c('module_color','p_value','odds_ratio')
 for (i in 1:length(colors)){
   color = colors[i]
@@ -435,11 +436,11 @@ gwas_enrichment_results %>% arrange(p.adj)
 ```
 
 #### Plot the module enrichment and significance for GWAS genes
-```{r erichment plot for gwas genes}
+```{r}
 gwas_enrichment_results %>%
   ggplot(aes(x = odds_ratio, y = neg_log10)) +
-  geom_point(aes(color = module_color), size = 3) + 
-  geom_point(color = "black", size = 3, pch = 21) + theme_bw() +
+  geom_point(aes(color = module_color), size = 4) + 
+  geom_point(color = "black", size = 4, pch = 21) + theme_bw() +
   geom_hline(yintercept = -log10(0.05), color = "red") +
   scale_colour_identity()
 ```
@@ -467,10 +468,10 @@ mono_mouse_genes = mono_mouse_hom$Symbol
 for (i in 1:length(colors)){
   color = colors[i]
   d = as.data.frame(get(paste0("mod_",color,"_trx_info")))
-  x = unique(d$external_gene_name) %in% mono_mouse_genes
+  x = unique(d$external_gene_name) %in% unique(mono_mouse_genes)
   x = sum(x == TRUE)
   a <- x
-  b <- (length(mono_mouse_genes) - a)
+  b <- (length(unique(mono_mouse_genes)) - a)
   c <- (dim(d)[1] - a)
   e <- (29255 - a - b -c)
   assign(paste0("ft_mod_",color), fisher.test(matrix(c(a,b,c,e),2,2,byrow=TRUE), 
@@ -495,11 +496,11 @@ filter(mono_results, mono_results$p.adj < 0.05) %>%
 ```
 
 #### Plot the module enrichment and significance for monogenic disease genes
-```{r erichment plot for monogenic disease genes}
+```{r}
 mono_results %>%
   ggplot(aes(x = odds_ratio, y = neg_log10)) +
-  geom_point(aes(color = module_color), size = 3) + 
-  geom_point(color = "black", size = 3, pch = 21) + theme_bw() +
+  geom_point(aes(color = module_color), size = 4) + 
+  geom_point(color = "black", size = 4, pch = 21) + theme_bw() +
   geom_hline(yintercept = -log10(0.05), color = "red") +
   scale_colour_identity()
 ```
@@ -511,10 +512,10 @@ Finally, we identify modules enriched for genes known to cause related phenotype
 for (i in 1:length(colors)){
   color = colors[i]
   d = as.data.frame(get(paste0("mod_",color,"_trx_info")))
-  x = unique(d$external_gene_name) %in% phen_genes
+  x = unique(d$external_gene_name) %in% unique(phen_genes)
   x = sum(x == TRUE)
   a <- x
-  b <- (length(phen_genes) - a)
+  b <- (length(unique(phen_genes)) - a)
   c <- (dim(d)[1] - a)
   e <- (29255 - a - b -c)
   assign(paste0("ft_mod_",color), fisher.test(matrix(c(a,b,c,e),2,2,byrow=TRUE), 
@@ -539,11 +540,11 @@ filter(phen_results, phen_results$p.adj < 0.05)
 ```
 
 #### Plot the module enrichment and significance for genes associated with bone phenotype from model systems
-```{r erichment plot for known bone phenotype genes}
+```{r}
 phen_results %>%
   ggplot(aes(x = odds_ratio, y = neg_log10)) +
-  geom_point(aes(color = module_color), size = 3) + 
-  geom_point(color = "black", size = 3, pch = 21) + theme_bw() +
+  geom_point(aes(color = module_color), size = 4) + 
+  geom_point(color = "black", size = 4, pch = 21) + theme_bw() +
   geom_hline(yintercept = -log10(0.05), color = "red") +
   scale_colour_identity()
 ```
@@ -593,9 +594,20 @@ ldsc_res = as.data.frame(read_excel("./data/ld_score_regression/ld_score_reg_res
 
 # A p-value adjustment is also applied to correct for testing across all modules
 ldsc_res$padj = p.adjust(ldsc_res$Enrichment_p, method = "fdr", n = length(ldsc_res$Enrichment_p))
+ldsc_res$neg_log10 = -log10(ldsc_res$padj)
 ldsc_res %>%
-  dplyr::select(module, Enrichment, padj) %>%
+  dplyr::select(module, Enrichment, padj, neg_log10) %>%
   filter(padj < 0.05)
+```
+
+### Plot the LD score enrichments for all modules
+```{r}
+ldsc_res %>%
+  ggplot(aes(x = Enrichment, y = neg_log10)) +
+  geom_point(aes(color = module), size = 4) + 
+  geom_point(color = "black", size = 4, pch = 21) + theme_bw() +
+  geom_hline(yintercept = -log10(0.05), color = "red") +
+  scale_colour_identity()
 ```
 
 ## (6) Colocalization Analysis
