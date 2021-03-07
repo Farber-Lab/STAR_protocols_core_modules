@@ -10,9 +10,10 @@ output:
 ---
 
 # Before You Begin #
-## (1) Load packages and set working directory location ##
+## (1) Load packages and set location of your working directory ##
 - commented lines install required packages--uncomment and run if a package is not installed
-```{r dependencies, echo=T, message=FALSE, warning=FALSE}
+- using the setwd() function, set your working directory to the same directory where this script is saved
+```{r echo=T, message=FALSE, warning=FALSE}
 #install.packages("tidyverse")
 library(tidyverse)
 #install.packages("readxl")
@@ -51,18 +52,29 @@ library(PhenStat)
 # set the working directory to the directory where this notebook is saved
 setwd("~/Desktop/starprotocol_sabik2020/")
 opts_knit$set(root.dir = '~/Desktop/starprotocol_sabik2020/')
+# create the directory structure to save aritfacts from this script
+dir.create("./data")
 ```
 
 ## (2) Identify a GWAS study
-Here we read in the summary statistics from a genome-wide association study for bone mineral density. This protocol requires that the GWAS summary statistics are available for the study of interest.
-```{r read in gwas}
+Here we read in the summary statistics from a genome-wide association study for bone mineral density as an example. This protocol requires that the GWAS summary statistics are available for the study of interest. The summary statistics should contain the following columns:
+- variant IDs, typically rsIDs or chromosome:position, (SNPID and SNP)
+- chromosome of the variant, (CHR)
+- position of the variant, (BP) *note that these are dependant upon the genome build used in the study, in this case hg19
+- reference and alternative alleles, (ALLELE1, ALLELE0)
+- allele frequency, (A1FREQ) *note this is the frequency of the alternative allele--some studies also report the minor allele frequency, or the frequency of whichever allele is less prevalent
+- effect sizes from the study, indicating the difference in measured phenotype associated with change in allele number, (BETA)
+- standard error of effect size, (SE)
+- p-value of association, (P)
+- sample size of the study, (N)
+```{r}
 url = "http://www.gefos.org/sites/default/files/BEurope-Bmd-As-C-Gwas-SumStats.txt_0.gz"
 gwas_sumstat = read_tsv(url)
 ```
 
 ## (3) Acquire RNA-seq data in the relevant tissue or cell type for your trait of interest
 Here, we load a expression matrix, derived from murine osteoblasts (bone forming cells). Combining the results of the bone mineral density GWAS with a gene co-expression network derived from mineralizing osteoblasts will provide a platform for developing hypotheses about the role of specific mineralization-related genes that are correlated with differences in bone mineral density. 
-```{r read in expression matrix}
+```{r}
 # Loading in our expression matrix GxS with G columns, representing genes and S rows, representing samples
 load(url("https://github.com/Farber-Lab/STAR_protocols_core_modules/raw/main/data/expression_matrix/exp_mat.Rdata"))
 # formatting exp_mat, removing strain as a column to row names
@@ -76,7 +88,6 @@ exp_mat <- exp_mat[,-1]
 Here, we provide examples of pre-processing steps that have already been conducted on the matrix we loaded above.
 ```{r eval=FALSE}
 # this chunk is not run because these steps were already applied to the expression matrix we've loaded in
-
 #apply a variance stabilizing transformation to get normalized exp_mat
 varianceStabilizingTransformation(object = exp_mat)
 # or apply a log transformation to get normalized exp_mat
@@ -84,11 +95,9 @@ log2(exp_mat + 1)
 ```
 
 ###  (4b) Removing batch effects via PEER
-Here, we describe batch correction via PEER, which has already been applied to the matrix we loaded above. The PEER tool is not 
+Here, we describe batch correction via PEER, which has already been applied to the matrix we loaded above. At the time of publication, PEER was not wrapped for R, and the python module was use instead, however, PEER is now available as an R package. It must be downloaded from the project GitHub page, but is in submission to CRAN. 
 ```{r eval = FALSE}
-# At the time of publication, PEER was not wrapped for R, and the python module was use instead, however, PEER is now available as an R package. It must be downloaded from the project GitHub page, but is in submission to CRAN. 
-
-# A detailed wiki for how to use PEER can be found on the PEER Github Page: https://github.com/PMBio/peer/wiki/Tutorial. 
+# A detailed wiki for how to install and use PEER can be found on the PEER Github Page: https://github.com/PMBio/peer/wiki/Tutorial.
 ```
 
 ### (4c) Quantile normalization
@@ -103,9 +112,10 @@ norm_exp_mat[1:5,1:5]
 ```
 
 ## (5) Curating Lists of Known Disease and Phenotype Associated Genes
-In this section, we load curated lists of genes known to be associated with monogenic bone disorders in humans and in abberant bone phenotypes in mouse models. These lists were curated by subject matter experts from literature and databases of bone-related phenotype screens. 
+In this section, we load curated lists of genes known to be associated with monogenic bone disorders in humans and in abberant bone phenotypes in mouse models. These lists were curated by subject matter experts from literature and databases of bone-related phenotype screens. You will need to generate a similar list that is relevant for your area of study.
 ```{r}
 # read in annotated tables of genes
+dir.create("./data/gene_lists")
 url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/ae828f98-acd0-40e7-aa41-14dd7fffefc0/mmc6.xlsx"
 download.file(url = url, destfile = "./data/gene_lists/gene_lists.xlsx")
 phen_genes = read_excel("./data/gene_lists/gene_lists.xlsx", sheet = 1)
@@ -137,10 +147,11 @@ par(cex = 0.6);
 par(mar = c(0,4,2,0))
 plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, 
      cex.axis = 1.5, cex.main = 2)
+# None of these samples require removal from the analysis
 ```
 
 ### Power Calculation for Network Construction
-Next, the power used for calculating the network is empirically chosen by calculating scale-free topology and mean connectivity. 
+Next, the power used for calculating the network is empirically chosen by calculating scale-free topology and mean connectivity. A general heuristic is to construct the network the lowest power at which that scale-free topology index curve flattens out. 
 ```{r}
 powers = c(c(1:10), seq(from = 12, to=20, by=2))
 # Call the network topology analysis function
@@ -159,21 +170,20 @@ plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
 plot(sft$fitIndices[,1], sft$fitIndices[,5],
      xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
      main = paste("Mean connectivity"));text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
-#### power = 8
-#### lowest power to provide a scale-free topology fit of at least 0.9 
-#### Low mean connectivity score
+#### power = 9, lowest power before scale-free topology fit levels off
 ```
 
 ### Calculating the Network
-Using the lower power that results in a scale-free topology fit of at least 0.9, and thus a low mean connectivity score, the network is calculated. 
+Finally, a signed network is calcuated using the power identified in the power calculation step, a minimum module size of 20 trasnscripts, 
 ```{r}
-net = blockwiseModules(norm_exp_mat, power = 8,
+dir.create("./data/network/")
+net = blockwiseModules(norm_exp_mat, power = 9,
                        TOMType = "signed", minModuleSize = 20,
                        networkType = "signed",
                        reassignThreshold = 0, mergeCutHeight = 0.15,
                        numericLabels = TRUE, pamRespectsDendro = FALSE,
                        saveTOMs = TRUE,
-                       saveTOMFileBase = "./data/network/norm_exp_mat_TOM",
+                       saveTOMFileBase = "./data/network/exp_mat_TOM",
                        verbose = 3)
 table(net$colors)
 ```
@@ -197,7 +207,7 @@ load("./data/network/network.RData")
 ```
 
 ### Annotating the Network
-In order to interpret the network it is useful to label the genes in the network with identifiers, e.g. Ensembl gene IDs, entrez IDs, etc. Using the biomaRt package, mappings from those identifiers to gene symbols can be acquired. These steps will vary based on the organism you use and the gene identifiers used in the list of phenotype and disease associated genes generated above. 
+In order to interpret the network it is useful to label the genes in the network with identifiers, e.g. Ensembl gene IDs, entrez IDs, etc. We use the biomaRt package,  to map the identifiers to gene symbols. These steps will vary based on the organism you use and the gene identifiers used in the list of relevant phenotype and disease associated genes you generate, examples of which were read in Before you Begin step (5) Curating lists of known phenotype and disease associated genes. 
 ```{r}
 # establish the database that matches your organism
 ensembl = useMart("ensembl")
@@ -210,10 +220,10 @@ mm19 = useDataset(mart = ensembl, dataset = "mmusculus_gene_ensembl")
 # Next, query the BioMart database for annotations for the genes of interest and merge the output of the query with the network results
 m = getBM(attributes = c("ensembl_transcript_id", "external_gene_name", "description", "chromosome_name", "start_position", "end_position"),
           filters = c("ensembl_transcript_id"),
-          values = colnames(norm_exp_mat),
+          values = colnames(exp_mat),
           mart = mm19)
 
-gene_MEs <- rbind(colnames(norm_exp_mat), moduleColors, moduleLabels)
+gene_MEs <- rbind(colnames(exp_mat), moduleColors, moduleLabels)
 gene_MEs <- t(gene_MEs)
 colnames(gene_MEs)[1:3] <- c("ensembl_transcript_id", "mod_color", "mod_number")
 gene_MEs <- as.data.frame(gene_MEs)
@@ -221,7 +231,7 @@ annotated_mods = merge(gene_MEs, m, by = "ensembl_transcript_id")
 
 # now you can filter annotated_mods to see the genes in each co-expression module
 annotated_mods %>%
-  filter(mod_number == 1)
+  filter(mod_color == "purple")
 ```
 
 ## (2) Gene Ontology Analysis
@@ -237,6 +247,7 @@ annotated_mods %>%
   write_csv(., "./data/network/mod_1.csv")
 
 # From ToppFun, you can click the "Download All" button from your results page, and get all of the results, so you can save them, browse them in R, and compare different modules in R
+dir.create("./data/gene_ontology")
 url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/60cdba8a-aa04-4c22-8ca4-4f8f0e6173dd/mmc3.xlsx"
 download.file(url = url, destfile = "./data/gene_ontology/toppfun_res.xlsx")
 toppfun_1 = read_excel("./data/gene_ontology/toppfun_res.xlsx", sheet = 1, skip = 1)
@@ -244,11 +255,13 @@ toppfun_1
 ```
 
 ## (3) Creating GWAS gene list
-Next, a list of genes implicated by the GWAS we loaded above will be generated. In the case of the GWAS we used, fine mapping was performed to identify a subset of significantly associated SNPs that are indepedent associations and lead SNPs, so here, we'll read in the lead SNP file and use it to subset the full summary statistics for the study.
+Next, we generate a list of genes implicated by the GWAS we loaded in Before you Begin step (1). In the case of the GWAS we used here as an example, fine mapping was performed to identify a subset of significantly associated SNPs that are indepedent associations and lead SNPs, so here, we'll read in the lead SNP file and use it to subset the full summary statistics for the study. In the original publication, we carried out this procedure for multiple GWAS for bone mineral density that use different measurement modalities, e.g. DEXA scanning and ultrasound-based measurements. 
 
-### Generating GWAS regions (SNPs with LD > 0.7 for GWAS SNPs)
+### Generating GWAS regions
+Regions are degined by the set of SNPs in linkage disequilibirum (LD) > 0.7 with each lead GWAS SNP).
 ```{r}
 ## Reading in lead SNPs
+dir.create("./data/gwas/")
 url = "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5621629/bin/NIHMS73769-supplement-Supplementary_Table_2.xlsx"
 download.file(url = url, destfile = "./data/gwas/gwas_bmd_lead_snps.xlsx")
 lead_snps = read_excel("./data/gwas/gwas_bmd_lead_snps.xlsx", sheet = 1, skip = 3)
@@ -339,7 +352,7 @@ precede_info = precede_info[,c(1,4,9)]
 precede_info$type = "precede"
 precede_info = precede_info[!duplicated(precede_info), ]
 colnames(precede_info) = c("chromosome", "gwas_snp", "gene_name", "type")
-precede_info = precede_info[-which(precede_info$morris_snp %in% overlaps_info$gwas_snp),]
+precede_info = precede_info[-which(precede_info$gwas_snp %in% overlaps_info$gwas_snp),]
 
 # We find the nearest genes following the ranges from the GWAS study
 nearest_follow <- GenomicRanges::follow(gr_gwas, gr_genes)
@@ -348,7 +361,7 @@ follow_info = follow_info[,c(1,4,9)]
 follow_info$type = "follow"
 follow_info = follow_info[!duplicated(follow_info), ]
 colnames(follow_info) = c("chromosome", "gwas_snp", "gene_name", "type")
-follow_info = follow_info[-which(follow_info$morris_snp %in% overlaps_info$gwas_snp),]
+follow_info = follow_info[-which(follow_info$gwas_snp %in% overlaps_info$gwas_snp),]
 
 # Finally, we combine these results into one table
 gwas_region_genes = rbind(overlaps_info, precede_info, follow_info)
@@ -356,12 +369,10 @@ gwas_region_genes
 ```
 
 ### Identify mouse homologs for GWAS genes
-Now, we now have a list of human genes that overlap the regions as defined by LD from our study of interest, however we may also need the equivalent list in mouse. We can use a homology map to generate a list of mouse homologs for the human gene list from MGI (http://www.informatics.jax.org/faq/ORTH_dload.shtml)
+Now, we now have a list of human genes that overlap the regions as defined by LD from our study of interest, however if you are using an expression dataset from another species, such as the mouse, you will also need to convert to the appropriate homologs. We can use a homology map to generate a list of mouse homologs for the human gene list from MGI (http://www.informatics.jax.org/faq/ORTH_dload.shtml). 
 ```{r}
 ## Reading in homology map ##
-url = "http://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt"
-homology <- read_tsv(url)
-homology
+homology = read_tsv(url("https://github.com/Farber-Lab/STAR_protocols_core_modules/raw/main/data/homology/HOM_MouseHumanSequence.txt"))
 
 gwas_gene_hom <- homology %>%
   filter(Symbol %in% gwas_region_genes$gene_name)
@@ -374,10 +385,16 @@ gwas_mouse_genes = gwas_mouse_hom$Symbol
 ```
 
 ## (4) Module Enrichment
-In this section, we conduct Fisher's Exact tests for module enrichment for GWAS genes, disease genes, and phenotype associated genes and generate tables and plots of the results. 
-
+In this section, we conduct Fisher's Exact tests for module enrichment for GWAS genes, disease genes, and phenotype associated genes and generate tables and plots of the results. In this section, we also read in the GWAS gene list from the orginial publication, which is a composite of the GWAS region analysis across multiple GWAS studies. 
 ### Identify modules enriched for GWAS genes
 ```{r}
+## Reading in composite GWAS gene list ##
+url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/d7558393-85e5-492c-89c3-29660938dd22/mmc4.xlsx"
+download.file(url = url, destfile = "./data/gwas/composite_gwas_list.xlsx")
+pub_gwas_genes = read_excel("./data/gwas/composite_gwas_list.xlsx", sheet = 1)
+pub_gwas_genes = pub_gwas_genes %>%
+  filter(GWAS_study_first_author %in% c("Estrada, et al.", "Kemp, et al."))
+
 # create list of all modules
 colors = unique(moduleColors)
 
@@ -390,10 +407,10 @@ for (i in 1:length(colors)){
   assign(paste0("mod_",color,"_gene_ids"), rownames(get(paste0("mod_",color,"_gene_exp"))))
   assign(paste0("mod_",color,"_trx_info"), annotated_mods %>% filter(mod_color == color))
   d = as.data.frame(get(paste0("mod_",color,"_trx_info")))
-  x = unique(d$external_gene_name) %in% gwas_mouse_genes
+  x = unique(d$external_gene_name) %in% unique(pub_gwas_genes$mouse_gene_name)
   x = sum(x == TRUE)
   a <- x
-  b <- (417 - a)
+  b <- (length(unique(pub_gwas_genes$mouse_gene_name)) - a)
   c <- (dim(d)[1] - a)
   e <- (29255 - c - b - a)
   assign(paste0("ft_mod_",color), fisher.test(matrix(c(a,b,c,e),2,2,byrow=TRUE), 
@@ -432,11 +449,11 @@ The annotated modules can be retrieved so the genes in the enriched modules can 
 ```{r}
 # Filtering annotated modules to browse one module
 annotated_mods %>%
-  filter(mod_color == "tan")
+  filter(mod_color == "purple")
 ```
 
 ### Identify modules enriched for genes associated with monogenic bone disorders
-In addition to identifying modules enriched for GWAS genes, modules enriched for genes known to cause related monogenic diseases can be identified
+In addition to identifying modules enriched for GWAS genes, we also identify modules enriched for genes known to cause related monogenic diseases.
 ```{r}
 # First, the human monogenic gene IDs are converted to mouse IDs
 mono_gene_hom <- homology %>%
@@ -453,7 +470,7 @@ for (i in 1:length(colors)){
   x = unique(d$external_gene_name) %in% mono_mouse_genes
   x = sum(x == TRUE)
   a <- x
-  b <- (40 - a)
+  b <- (length(mono_mouse_genes) - a)
   c <- (dim(d)[1] - a)
   e <- (29255 - a - b -c)
   assign(paste0("ft_mod_",color), fisher.test(matrix(c(a,b,c,e),2,2,byrow=TRUE), 
@@ -488,7 +505,7 @@ mono_results %>%
 ```
 
 ### Identify modules enriched for genes associated with bone phenotypes in model organisms
-Finally, modules enriched for genes known to cause related phenotypes in model organisms are identified
+Finally, we identify modules enriched for genes known to cause related phenotypes in model organisms.
 ```{r}
 # Then the loop is run to identify modules enriched for phenotype associated genes
 for (i in 1:length(colors)){
@@ -497,7 +514,7 @@ for (i in 1:length(colors)){
   x = unique(d$external_gene_name) %in% phen_genes
   x = sum(x == TRUE)
   a <- x
-  b <- (1088 - a)
+  b <- (length(phen_genes) - a)
   c <- (dim(d)[1] - a)
   e <- (29255 - a - b -c)
   assign(paste0("ft_mod_",color), fisher.test(matrix(c(a,b,c,e),2,2,byrow=TRUE), 
@@ -569,6 +586,7 @@ LD score regression (ldsc package) is used to calculated the partitioned heritab
 # The results table has a category for each annotation provided, but they have generic labels. The log keeps track of the annotation input, so we can get the names from the log, because the order of the annotation matters
 
 # Here is an example of table of results from an ldsc run arranged by p-value
+dir.create("./data/ld_score_regression")
 url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/921fc33d-d674-4488-951f-295320b24cea/mmc5.xlsx"
 download.file(url = url, destfile = "./data/ld_score_regression/ld_score_reg_res.xlsx")
 ldsc_res = as.data.frame(read_excel("./data/ld_score_regression/ld_score_reg_res.xlsx", sheet = 3))
@@ -581,9 +599,9 @@ ldsc_res %>%
 ```
 
 ## (6) Colocalization Analysis
-In this section, the coloc package is used to perform genetic colocalization analysis to determine whether eQTL for genes of interest from the core module identified above share common causal variants with QTL for the trait of interest. 
+In this section, we usethe coloc package to perform genetic colocalization analysis to determine whether eQTL for genes of interest from the core module identified above share common causal variants with GWAS loci for the trait of interest. 
 
-### Computing colocalization of GTEX eQTL for one gene in all tissues and trait QTL
+### Computing colocalization of GTEX eQTL for one gene in all tissues and trait GWAS loci
 ```{r,message=FALSE, warning=FALSE}
 # For this purpose, the GWAS summary statistics we loaded above are sufficient, however, we must reformat the gwas data for input into coloc
 gwas_coloc = gwas_sumstat[c(2,5,6,11,9,7)]
@@ -628,11 +646,11 @@ for (i in 1:length(tis$Tissue)){
 # take a look at the results, format them, and then look at the significant ones
 gene_coloc_results 
 colnames(gene_coloc_results) = c("tissue", "gene", "nsnps", "PP.H0.abf", "PP.H1.abf", "PP.H2.abf", "PP.H3.abf", "PP.H4.abf")
-subset(gene_coloc_results, PP.H4.abf > 0.50)
+subset(gene_coloc_results, PP.H4.abf > 0.9)
 ```
 
 ### Plotting interesting coloc results using RACER package
-For interesting coloc results, we can produce a mirror plot, mapping the GWAS summary statistics and the eQTL summary statistics onto the same genome coordinates for comparison
+For interesting coloc results, we produce a mirror plot, mapping the GWAS summary statistics and the eQTL summary statistics onto the same genome coordinates for comparison.
 ```{r}
 # Choosing a tissue with an interesting coloc result
 tissue = "Artery_Coronary"
