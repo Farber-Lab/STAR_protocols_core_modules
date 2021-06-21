@@ -10,7 +10,7 @@ output:
 ---
 
 # Before You Begin #
-## (1) Load packages and set location of your working directory ##
+## (1) Download the vignette and run this code chunk to load packages and set location of your working directory ##
 - commented lines install required packages--uncomment and run if a package is not installed
 - using the setwd() function, set your working directory to the same directory where this script is saved
 ```{r echo=T, message=FALSE, warning=FALSE}
@@ -129,133 +129,8 @@ monogenic_genes = monogenic_genes$gene[-c((len_mono-10):len_mono)]
 ```
 
 # Main Protocol
-## (1) Construct a co-expression network
-Here, we apply weighted gene coexpression network analysis to the expression matrix. This section heavily represents the content from the WGCNA tutorials created by the author's of WGCNA, found here: https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/Tutorials/
-
-### Setting WGCNA options
-```{r}
-options(stringsAsFactors = FALSE)
-```
-
-### Quality Control of Expression Data
-In this section, the samples in the expression matrix are clustered and plotted to identify outliers.
-```{r}
-#Using a cluster tree to find sample outliers
-sampleTree = hclust(dist(norm_exp_mat), method = "average")
-# sizeGrWindow(12,9)
-par(cex = 0.6);
-par(mar = c(0,4,2,0))
-plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, 
-     cex.axis = 1.5, cex.main = 2)
-# None of these samples require removal from the analysis
-```
-
-### Power Calculation for Network Construction
-Next, the power used for calculating the network is empirically chosen by calculating scale-free topology and mean connectivity. A general heuristic is to construct the network the lowest power at which that scale-free topology index curve flattens out. 
-```{r}
-powers = c(c(1:10), seq(from = 12, to=20, by=2))
-# Call the network topology analysis function
-sft = pickSoftThreshold(norm_exp_mat, powerVector = powers, verbose = 5, networkType = "signed")
-# Plot the results:
-# sizeGrWindow(9, 5)
-# par(mfrow = c(1,2));
-cex1 = 0.9;
-# Scale-free topology fit index as a function of the soft-thresholding power
-plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
-     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
-     main = paste("Scale independence")); text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
-     labels=powers,cex=cex1,col="red");abline(h=0.9,col="red")
-# this line corresponds to using an R^2 cut-off of h
-# Mean connectivity as a function of the soft-thresholding power
-plot(sft$fitIndices[,1], sft$fitIndices[,5],
-     xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
-     main = paste("Mean connectivity"));text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
-#### power = 9, lowest power before scale-free topology fit levels off
-```
-
-### Calculating the Network
-Finally, a signed network is calcuated using the power identified in the power calculation step, a minimum module size of 20 trasnscripts, 
-```{r}
-dir.create("./data/network/")
-net = blockwiseModules(norm_exp_mat, power = 9,
-                       TOMType = "signed", minModuleSize = 20,
-                       networkType = "signed",
-                       reassignThreshold = 0, mergeCutHeight = 0.15,
-                       numericLabels = TRUE, pamRespectsDendro = FALSE,
-                       saveTOMs = TRUE,
-                       saveTOMFileBase = "./data/network/exp_mat_TOM",
-                       verbose = 3)
-table(net$colors)
-```
-
-### Saving the Network
-The components of the network required for downstream analyses are saved so the network does not need to be calculated multiple times. 
-```{r}
-moduleLabels = net$colors
-moduleColors = labels2colors(net$colors)
-MEs = net$MEs;
-dim(MEs)
-geneTree = net$dendrograms[[1]];
-save(sft, MEs, moduleLabels, moduleColors, geneTree,
-     file = "./data/network/network.RData")
-```
-
-### Loading the Network
-In order to return to this script and run downstream analyses without recalculating the network, the necessary artifacts can be loaded using this code.
-```{r}
-load("./data/network/network.RData")
-```
-
-### Annotating the Network
-In order to interpret the network it is useful to label the genes in the network with identifiers, e.g. Ensembl gene IDs, entrez IDs, etc. We use the biomaRt package,  to map the identifiers to gene symbols. These steps will vary based on the organism you use and the gene identifiers used in the list of relevant phenotype and disease associated genes you generate, examples of which were read in Before you Begin step (5) Curating lists of known phenotype and disease associated genes. 
-```{r}
-# establish the database that matches your organism
-ensembl = useMart("ensembl")
-mm19 = useDataset(mart = ensembl, dataset = "mmusculus_gene_ensembl")
-
-# These functions may be used to determine the attributes and filters to apply in the database query
-# listAttributes(mm19)
-# listFilters(mm19)
-
-# Next, query the BioMart database for annotations for the genes of interest and merge the output of the query with the network results
-m = getBM(attributes = c("ensembl_transcript_id", "external_gene_name", "description", "chromosome_name", "start_position", "end_position"),
-          filters = c("ensembl_transcript_id"),
-          values = colnames(exp_mat),
-          mart = mm19)
-
-gene_MEs <- rbind(colnames(exp_mat), moduleColors, moduleLabels)
-gene_MEs <- t(gene_MEs)
-colnames(gene_MEs)[1:3] <- c("ensembl_transcript_id", "mod_color", "mod_number")
-gene_MEs <- as.data.frame(gene_MEs)
-annotated_mods = merge(gene_MEs, m, by = "ensembl_transcript_id")
-
-# now you can filter annotated_mods to see the genes in each co-expression module
-annotated_mods %>%
-  filter(mod_color == "purple")
-```
-
-## (2) Gene Ontology Analysis
-In this section, we describe the process of identifying gene ontology processes that are enriched in each coexpression module, and look at an example results table. 
-
-While tools exist for performing gene ontology analysis in R, our tool of preference for this project is ToppFun, of the ToppGene suite: https://toppgene.cchmc.org/enrichment.jsp, which is a web interface tool. ToppGene is unique in that it not only searches for enriched gene ontology categories and pathways for your genes of interest, but also human and mouse phenotypes, publications and published coexpression data sets, gene families, microRNAs, drugs, and diseases.
-
-ToppFun reports back the significance of each enrichment with an assortment of multiple testing correction methods, the number of hits for that category from your query ("Hit Count in Query List"), and the total number of genes in the category ("Hit Count in Genome").
-```{r}
-# You can extract the gene names for a module by writing the module out to a .csv file which can be fed into external tools, like ToppGene
-annotated_mods %>%
-  filter(mod_number == 1) %>%
-  write_csv(., "./data/network/mod_1.csv")
-
-# From ToppFun, you can click the "Download All" button from your results page, and get all of the results, so you can save them, browse them in R, and compare different modules in R
-dir.create("./data/gene_ontology")
-url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/60cdba8a-aa04-4c22-8ca4-4f8f0e6173dd/mmc3.xlsx"
-download.file(url = url, destfile = "./data/gene_ontology/toppfun_res.xlsx")
-toppfun_1 = read_excel("./data/gene_ontology/toppfun_res.xlsx", sheet = 1, skip = 1)
-toppfun_1
-```
-
-## (3) Creating GWAS gene list
-Next, we generate a list of genes implicated by the GWAS we loaded in Before you Begin step (1). In the case of the GWAS we used here as an example, fine mapping was performed to identify a subset of significantly associated SNPs that are indepedent associations and lead SNPs, so here, we'll read in the lead SNP file and use it to subset the full summary statistics for the study. In the original publication, we carried out this procedure for multiple GWAS for bone mineral density that use different measurement modalities, e.g. DEXA scanning and ultrasound-based measurements. 
+## (1) Creating GWAS gene list
+First, we generate a list of genes implicated by the GWAS we loaded in Before you Begin step (1). In the case of the GWAS we used here as an example, fine mapping was performed to identify a subset of significantly associated SNPs that are indepedent associations and lead SNPs, so here, we'll read in the lead SNP file and use it to subset the full summary statistics for the study. In the original publication, we carried out this procedure for multiple GWAS for bone mineral density that use different measurement modalities, e.g. DEXA scanning and ultrasound-based measurements. 
 
 ### Generating GWAS regions
 Regions are degined by the set of SNPs in linkage disequilibirum (LD) > 0.7 with each lead GWAS SNP).
@@ -382,6 +257,132 @@ gwas_mouse_hom <- homology %>%
  filter(`NCBI Taxon ID` == 10090)
 
 gwas_mouse_genes = gwas_mouse_hom$Symbol 
+```
+
+## (2) Construct a co-expression network
+Next, we apply weighted gene coexpression network analysis to the expression matrix. This section heavily represents the content from the WGCNA tutorials created by the author's of WGCNA, found here: https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/Tutorials/
+
+### Setting WGCNA options
+```{r}
+options(stringsAsFactors = FALSE)
+```
+
+### Quality Control of Expression Data
+In this section, the samples in the expression matrix are clustered and plotted to identify outliers.
+```{r}
+#Using a cluster tree to find sample outliers
+sampleTree = hclust(dist(norm_exp_mat), method = "average")
+# sizeGrWindow(12,9)
+par(cex = 0.6);
+par(mar = c(0,4,2,0))
+plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, 
+     cex.axis = 1.5, cex.main = 2)
+# None of these samples require removal from the analysis
+```
+
+### Power Calculation for Network Construction
+Next, the power used for calculating the network is empirically chosen by calculating scale-free topology and mean connectivity. A general heuristic is to construct the network the lowest power at which that scale-free topology index curve flattens out. 
+```{r}
+powers = c(c(1:10), seq(from = 12, to=20, by=2))
+# Call the network topology analysis function
+sft = pickSoftThreshold(norm_exp_mat, powerVector = powers, verbose = 5, networkType = "signed")
+# Plot the results:
+# sizeGrWindow(9, 5)
+# par(mfrow = c(1,2));
+cex1 = 0.9;
+# Scale-free topology fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
+     main = paste("Scale independence")); text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     labels=powers,cex=cex1,col="red");abline(h=0.9,col="red")
+# this line corresponds to using an R^2 cut-off of h
+# Mean connectivity as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+     xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
+     main = paste("Mean connectivity"));text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+#### power = 9, lowest power before scale-free topology fit levels off
+```
+
+### Calculating the Network
+Finally, a signed network is calcuated using the power identified in the power calculation step, a minimum module size of 20 trasnscripts, 
+```{r}
+dir.create("./data/network/")
+net = blockwiseModules(norm_exp_mat, power = 9,
+                       TOMType = "signed", minModuleSize = 20,
+                       networkType = "signed",
+                       reassignThreshold = 0, mergeCutHeight = 0.15,
+                       numericLabels = TRUE, pamRespectsDendro = FALSE,
+                       saveTOMs = TRUE,
+                       saveTOMFileBase = "./data/network/exp_mat_TOM",
+                       verbose = 3)
+table(net$colors)
+```
+
+### Saving the Network
+The components of the network required for downstream analyses are saved so the network does not need to be calculated multiple times. 
+```{r}
+nSamples = 42
+moduleLabels = net$colors
+moduleColors = labels2colors(net$colors)
+MEs = net$MEs
+dim(MEs)
+geneTree = net$dendrograms[[1]]
+save(sft, MEs, moduleLabels, moduleColors, geneTree, nSamples,
+     file = "./data/network/network.RData")
+```
+
+### Loading the Network
+In order to return to this script and run downstream analyses without recalculating the network, the necessary artifacts can be loaded using this code.
+```{r}
+load("./data/network/network.RData")
+```
+
+### Annotating the Network
+In order to interpret the network it is useful to label the genes in the network with identifiers, e.g. Ensembl gene IDs, entrez IDs, etc. We use the biomaRt package,  to map the identifiers to gene symbols. These steps will vary based on the organism you use and the gene identifiers used in the list of relevant phenotype and disease associated genes you generate, examples of which were read in Before you Begin step (5) Curating lists of known phenotype and disease associated genes. 
+```{r}
+# establish the database that matches your organism
+ensembl = useMart("ensembl")
+mm19 = useDataset(mart = ensembl, dataset = "mmusculus_gene_ensembl")
+
+# These functions may be used to determine the attributes and filters to apply in the database query
+# listAttributes(mm19)
+# listFilters(mm19)
+
+# Next, query the BioMart database for annotations for the genes of interest and merge the output of the query with the network results
+m = getBM(attributes = c("ensembl_transcript_id", "external_gene_name", "description", "chromosome_name", "start_position", "end_position"),
+          filters = c("ensembl_transcript_id"),
+          values = colnames(exp_mat),
+          mart = mm19)
+
+gene_MEs <- rbind(colnames(exp_mat), moduleColors, moduleLabels)
+gene_MEs <- t(gene_MEs)
+colnames(gene_MEs)[1:3] <- c("ensembl_transcript_id", "mod_color", "mod_number")
+gene_MEs <- as.data.frame(gene_MEs)
+annotated_mods = merge(gene_MEs, m, by = "ensembl_transcript_id")
+
+# now you can filter annotated_mods to see the genes in each co-expression module
+annotated_mods %>%
+  filter(mod_color == "purple")
+```
+
+## (3) Gene Ontology Analysis
+In this section, we describe the process of identifying gene ontology processes that are enriched in each coexpression module, and look at an example results table. 
+
+While tools exist for performing gene ontology analysis in R, our tool of preference for this project is ToppFun, of the ToppGene suite: https://toppgene.cchmc.org/enrichment.jsp, which is a web interface tool. ToppGene is unique in that it not only searches for enriched gene ontology categories and pathways for your genes of interest, but also human and mouse phenotypes, publications and published coexpression data sets, gene families, microRNAs, drugs, and diseases.
+
+ToppFun reports back the significance of each enrichment with an assortment of multiple testing correction methods, the number of hits for that category from your query ("Hit Count in Query List"), and the total number of genes in the category ("Hit Count in Genome").
+```{r}
+# You can extract the gene names for a module by writing the module out to a .csv file which can be fed into external tools, like ToppGene
+annotated_mods %>%
+  filter(mod_number == 1) %>%
+  write_csv(., "./data/network/mod_1.csv")
+
+# From ToppFun, you can click the "Download All" button from your results page, and get all of the results, so you can save them, browse them in R, and compare different modules in R
+dir.create("./data/gene_ontology")
+url = "https://www.cell.com/cms/10.1016/j.celrep.2020.108145/attachment/60cdba8a-aa04-4c22-8ca4-4f8f0e6173dd/mmc3.xlsx"
+download.file(url = url, destfile = "./data/gene_ontology/toppfun_res.xlsx")
+toppfun_1 = read_excel("./data/gene_ontology/toppfun_res.xlsx", sheet = 1, skip = 1)
+toppfun_1
 ```
 
 ## (4) Module Enrichment
@@ -610,8 +611,50 @@ ldsc_res %>%
   scale_colour_identity()
 ```
 
-## (6) Colocalization Analysis
-In this section, we usethe coloc package to perform genetic colocalization analysis to determine whether eQTL for genes of interest from the core module identified above share common causal variants with GWAS loci for the trait of interest. 
+## (6) Gene-level analysis prioritization
+In this section, we calculate each genes' module membership (correlation with the module eigengene) for each module and save the results and a p-value. Quantitatively, the module membership score is the correlation between the module’s eigengene, which describes the collective expression profile of the group of genes, and each individual gene’s expression pattern. Module membership is highly correlated with intramodular connectivity, and thus, intramodular hub genes tend to have high module membership. 
+```{r}
+# calculate the correlation between the expression profiles and module eigengenes for each pair and the p-value
+MMvalue = as.data.frame(cor(norm_exp_mat, MEs, use='p'))
+MMPvalue = as.data.frame(corPvalueStudent(as.matrix (MMvalue), nSamples))
+
+# map the names of the modules from numeric to color names 
+modMap = unique(as.data.frame(cbind(moduleColors, moduleColors, moduleLabels), row.names = NA))
+colnames(modMap) = c("MM.p.moduleColors", "MM.moduleColors", "moduleLabels")
+modMap$moduleLabels = paste0("ME", modMap$moduleLabels)
+modMap$MM.moduleColors = paste0("MM.", modMap$MM.moduleColors)
+modMap$MM.p.moduleColors = paste0("MM.p.", modMap$MM.p.moduleColors)
+names(MMvalue) = modMap$MM.moduleColors[match(names(MMvalue), modMap$moduleLabels)]
+names(MMPvalue) = modMap$MM.p.moduleColors[match(names(MMPvalue), modMap$moduleLabels)]
+
+# moving the transcript IDs as a column
+MMvalue$Transcript.ID = rownames(MMvalue)
+MMPvalue$Transcript.ID = rownames(MMPvalue)
+
+# the resulting tables have column names of the form MM."module_color" and MM.p."module_color"
+MMvalue
+```
+
+Next, we can annotate our module of interest with the module membership scores
+```{r}
+# setting module_color to the module of interest
+module_color = "purple"
+
+# we define the columns of interest, select them from the relevant tables, and merge them by transcript ID
+cols = c(paste0("MM.", module_color), paste0("MM.p.", module_color), "MMValue", "MMPvalue", "Transcript.ID")
+mod_MMtable = dplyr::select(MMvalue, one_of(cols)) %>%
+  merge(., dplyr::select(MMPvalue, one_of(cols)))
+mod_mm_df = merge(mod_MMtable, get(paste0("mod_",module_color,"_trx_info")), by.x = "Transcript.ID", by.y = "ensembl_transcript_id")
+
+# the resulting table contains a row for each transcript in the module, now annotated with module membership scores and p-values
+mod_mm_df %>% arrange(desc(MM.purple))
+
+# of thes top module membership transcript, many have already been linked to BMD, but a few novel genes have high module membership, including Cadm1, Slc8a3, B4galnt3, and Adgrd1
+```
+
+
+## (7) Colocalization Analysis
+In this section, we use the coloc package to perform genetic colocalization analysis to determine whether eQTL for genes of interest from the core module identified above share common causal variants with GWAS loci for the trait of interest. In this example, we look at the relationship between the eQTL for B4galnt3, a high module membership purple module gene, across al GTEx tissues and the proximal QTL for bone mineral density.
 
 ### Computing colocalization of GTEX eQTL for one gene in all tissues and trait GWAS loci
 ```{r,message=FALSE, warning=FALSE}
@@ -693,8 +736,8 @@ eqtl_b4galnt3_ld = ldRACER(assoc_data = eqtl_b4galnt3_formatter, rs_col = "RS_ID
 mirrorPlotRACER(assoc_data1 = eqtl_b4galnt3_ld, assoc_data2 = gwas_b4galnt3_ld, chr = 12, name1 = "B4GALNT3 eQTL", name2 = "BMD GWAS", plotby = "coord", start_plot = 500000, end_plot = 700000, label_lead = TRUE)
 ```
 
-## (7) PhenStat Analysis
-While the colocalization analysis provides evidence supporting a relationship between network identified genes and a trait of interest, a causal relationship can only be demonstrated through controlled perturbation of a target and direct measurement of the phenotype of interest. While the hypotheses here can lead to a novel set of experiments, databases of experimental perturbations and measured phenotypes can be mined for evidence supporting a causal relationship between a gene and a phenotype of interest. For example, the International Mouse Phenotyping Consortium has a database of phenotypes measured in 7022 strains of knockout mice (IMPC release 12.0). 
+## (8) PhenStat Analysis
+While the colocalization analysis provides evidence supporting a relationship between network identified genes and a trait of interest, a causal relationship can only be demonstrated through controlled perturbation of a target and direct measurement of the phenotype of interest. While the hypotheses here can lead to a novel set of experiments, databases of experimental perturbations and measured phenotypes can be mined for evidence supporting a causal relationship between a gene and a phenotype of interest. For example, the International Mouse Phenotyping Consortium has a database of phenotypes measured in 7022 strains of knockout mice (IMPC release 12.0). In this section, we conduct the phenstat analysis for B4galnt3. 
 - search for gene on main page https://www.mousephenotype.org/
 - go to gene page https://www.mousephenotype.org/data/genes/MGI:3041155
 - click all data table, search for relevant phenotype
